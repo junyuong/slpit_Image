@@ -1,0 +1,709 @@
+
+import numpy as np
+import cv2
+from math import *
+import os
+import tkinter
+import tkinter.font
+from PIL import ImageTk, Image,ImageDraw, ImageFont
+import shutil
+import natsort
+path = "./"
+pass_path = "./pass_img"
+garbage_path = "./delete_img"
+origin_path = "./original_img"
+
+global img_origin
+img_origin = None
+global g_st_t
+global g_cen_t
+global select_label
+
+global img_rate_w
+global img_rate_h
+global select_label_set
+select_label_set = None
+global result_number
+
+result_path = os.listdir("C://PycharmProjects/TrainResNet/jpg/result_img")
+if not result_path:
+    result_number=0
+else:
+    num = natsort.natsorted(result_path,reverse=True)
+    result_number = int(num[0].replace(".png",""))
+
+
+def create_dir():
+
+    mp4Dir = "result_img"
+    if not os.path.isdir(mp4Dir):
+        os.mkdir(mp4Dir)
+
+    mp4Dir = "original_img"
+    if not os.path.isdir(mp4Dir):
+        os.mkdir(mp4Dir)
+
+    mp4Dir = "pass_img"
+    if not os.path.isdir(mp4Dir):
+        os.mkdir(mp4Dir)
+    
+    mp4Dir = "delete_img"
+    if not os.path.isdir(mp4Dir):
+        os.mkdir(mp4Dir)
+
+def dist_ucle(x,y):
+#거리 계산
+    val=sqrt( pow((x[0]-y[0]),2) + pow((x[1]-y[1]),2))    
+    return val
+def min_distans_val(self):
+    value="값 : "+str(scale.get())
+    scale_label.config(text=value)
+    
+def min_area_val(self):
+    value="값 : "+ str(scale2.get())
+    scale_label1.config(text=value)
+    
+def labeling_rectangle_print(img,st_t,cen_t): #라벨링 프린터 (지워도됨)
+    for label in range(0,st_t.shape[0]):
+        cv2.rectangle(img, (st_t[label][0], st_t[label][1]),  (st_t[label][0]+st_t[label][2], st_t[label][1]+st_t[label][3]), (0, 0, 255), 2)
+        img = cv2.circle(img, (int(cen_t[label][0]),int(cen_t[label][1])), 3, (0,0,255), 4)        
+    return img  
+
+def labeling_number_print(img,st_t,cen_t): #라벨링 넘버 프린트 (지워도됨)
+    im = Image.fromarray(img)    
+    draw = ImageDraw.Draw(im)   
+    
+    fnt = ImageFont.truetype('test.ttf', 40)
+    for i in range(0,st_t.shape[0]):
+        draw.text((cen_t[i][0],cen_t[i][1]),str(i), fill='red', font=fnt)    
+    return im
+
+
+def right_click(event):
+    global g_cen_t
+    global select_label_set
+    cen_t = np.zeros((g_cen_t.shape[0],g_cen_t.shape[1]))
+    temp_distans=[0]
+    val_a = [int(event.x),int(event.y)]
+
+    for i in range(0,g_cen_t.shape[0]):
+        cen_t[i][0] = (g_cen_t[i][0] / img_rate_w)
+        cen_t[i][1] = (g_cen_t[i][1] / img_rate_h)
+        
+        
+    for i in range(0,g_cen_t.shape[0]):
+        val_b = [int(cen_t[i][0]),int(cen_t[i][1])]
+        temp_dist = dist_ucle(val_a,val_b)
+        temp_distans = np.vstack((temp_distans,temp_dist))
+  
+    temp_distans = np.delete(temp_distans, 0, axis=0)
+    select_label=np.argmin(temp_distans)
+    
+    
+    text_label_str = "선택 라벨링은 : "+str(select_label)
+    select_label_text.config(text=text_label_str)
+    select_label_set = np.vstack((select_label_set,select_label))
+
+    if(select_label_set[0]==None or select_label_set.shape[0] >=3):
+        select_label_set = np.delete(select_label_set, 0, axis=0)
+        
+    text_label_str = str(select_label_set)
+    select_label_set_text.config(text=text_label_str)
+
+def update_label_total(st_t):
+    text_label_str = "총 라벨링 "+str(len(st_t)) + " 개"
+    total_label.config(text=text_label_str)
+    
+def min_area_inspection(st_t,cen_t): # 최소 넓이 검사
+    min_area = scale2.get()
+    st_temp = st_t[0][:]
+    cen_temp = cen_t[0][:]    
+    for i in range(1,st_t.shape[0]):
+        if st_t[i][4] >= min_area:
+            st_temp=np.vstack((st_temp,st_t[i][:]))
+            cen_temp = np.vstack((cen_temp,cen_t[i][:]))               
+    return st_temp,cen_temp
+
+
+
+def distans_calculator(stats_l,centroids_l):
+    max_distanse = scale.get()
+    
+    flg_for=False
+    for i in range(0,stats_l.shape[0]):
+        for j in range(0,stats_l.shape[0]):
+            #print(dist_ucle(centroids_l[i],centroids_l[j]))
+            if(i!=j and dist_ucle(centroids_l[i],centroids_l[j]) <= max_distanse):
+                # print("있어")
+                if(stats_l[i][0] > stats_l[j][0]):
+                    x_min=stats_l[j][0]
+                else:
+                    x_min=stats_l[i][0]
+                if(stats_l[i][1] > stats_l[j][1]):
+                    y_min=stats_l[j][1]
+                else:
+                    y_min=stats_l[i][1]
+                if(stats_l[i][0]+stats_l[i][2] > stats_l[j][0] + stats_l[j][2]):
+                    x_max=stats_l[i][0]+stats_l[i][2]
+                else:
+                    x_max=stats_l[j][0]+stats_l[j][2]
+                if(stats_l[i][1]+stats_l[i][3] > stats_l[j][1] + stats_l[j][3]):
+                    y_max=stats_l[i][1]+stats_l[i][3]
+                else:
+                    y_max=stats_l[j][1]+stats_l[j][3]
+                update_center_x = (x_min + x_max) / 2
+                update_center_y = (y_min + y_max) / 2
+                update_w = (x_max-x_min)
+                update_h = (y_max-y_min)
+                update_area = update_w * update_h
+                update_center = [update_center_x, update_center_y]
+                update_stats = [x_min,y_min,update_w,update_h,update_area]
+                
+                #delet (0)행 i,j열 삭제
+                stats_l = np.delete(stats_l, (i,j), axis=0)
+                centroids_l = np.delete(centroids_l, (i,j), axis=0)
+                
+                stats_l = np.vstack((stats_l,update_stats))
+                centroids_l = np.vstack((centroids_l,update_center))
+                flg_for=True
+                break
+        if(flg_for==True):
+            break
+    return stats_l,centroids_l
+
+
+def all_area_labeling_calculrate(img,stats_l,centroids_l):     
+    temp_min=np.amin(stats_l,axis=0)
+    x_min = temp_min[0]
+    y_min = temp_min[1]
+    temp_max_x=[]
+    temp_max_y=[]
+    for i in range(0,(stats_l.shape[0])):
+        temp_max_x.append(stats_l[i][0] + stats_l[i][2])
+        temp_max_y.append(stats_l[i][1] + stats_l[i][3])
+        
+    x_max = max(temp_max_x)
+    y_max = max(temp_max_y)
+
+    return x_min,y_min,x_max,y_max
+
+def all_area_cut(img,st_t,cen_t):
+
+    #이미지 자르기
+    x_min,y_min,x_max,y_max = all_area_labeling_calculrate(img,st_t,cen_t)
+    
+    img = img[y_min:y_max,x_min:x_max]
+    cv2.imwrite('temp/img_cut.png', img)
+    return img
+
+    
+    
+def basic_calculate():
+    global img_origin
+    global g_st_t
+    global g_cen_t
+    
+    img,ref = load_img()
+    
+  
+    st_t,cen_t = img_preprocessing_labeling(img)
+    st_t,cen_t = min_area_inspection(st_t,cen_t) ## 최소 넓이 검사
+    img = all_area_cut(img,st_t,cen_t)
+    img_origin = img.copy()
+    
+    st_t,cen_t = img_preprocessing_labeling(img)
+    st_t,cen_t = min_area_inspection(st_t,cen_t) ## 최소 넓이 검사
+   
+    #cv2.imwrite('temp/processing.png', img_origin)
+    
+    # cv2.imwrite('temp/temp2.png', img)
+    
+    if len(st_t) > 0: #라벨링들 간의 최소거리 병합
+        inter = st_t.shape[0]
+        for i in range(0,inter): 
+            st_t,cen_t = distans_calculator(st_t,cen_t)
+        
+        #cv2.imwrite('temp/min_distans.png', img_origin)
+        
+        new_img = labeling_rectangle_print(img,st_t,cen_t)      
+
+        if labeling_number_print_val.get() == 1:
+            
+            new_img = labeling_number_print(new_img,st_t,cen_t)
+        
+        g_st_t = st_t
+        g_cen_t = cen_t
+        
+        #cv2.imwrite('temp/retangle_and_number_print.png', img_origin)
+        
+        
+        update_label_total(st_t) ## 라벨 갯수 표시 업데이트
+        view_img(new_img)
+        #print(img_rate_w,img_rate_h)
+        
+        
+    else:
+        print("라벨링 없음")
+    
+    return 0
+    
+    
+    
+def img_preprocessing_labeling(img):
+    imgray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    ret, thresh = cv2.threshold(imgray, 127, 255, 0)
+    thresh = cv2.bitwise_not(thresh) #이미지 반전
+    ret, labels, st_t, cen_t = cv2.connectedComponentsWithStats(thresh,connectivity=8) #(8방향 라벨링 실행)
+    st_t =np.delete(st_t, (0), axis=0) #제일큰영역 하나 뺴줌 (그림 전체임)
+    cen_t =np.delete(cen_t, (0), axis=0) #제일큰영역 하나 뺴줌 (그림 전체임)     
+    #st_t [[ 242  121  188  154 4014] x좌표,y좌표,넓이,높이, 영역
+    #cen_t [ 346.59840558  201.97932237] x,y 중심좌표
+    return st_t,cen_t
+
+def temp():
+    print("힝")
+    
+    
+def load_img():
+    file_list = os.listdir(path)
+    file_list_jpg = [file for file in file_list if file.endswith(".jpg")]
+    if len(file_list_jpg)==0:
+       #print("끝")
+        pass    
+    else:
+        img = cv2.imread(path+file_list_jpg[0])        
+    return img,file_list_jpg
+
+
+
+
+
+
+def view_img(img): 
+    global img_rate_w
+    global img_rate_h
+    ## 여기서 강제로 늘리는 소스 필료
+    #print(img.shape[0])
+    #<class 'numpy.ndarray'> <class 'PIL.Image.Image'>
+    if type(img) == np.ndarray: #opencv 이미지냐
+
+        #print(img.shape[0],img.shape[1])
+        img_rate_w = img.shape[1] / (window_w*window_rate)
+        img_rate_h = img.shape[0] / window_h
+        
+        img = cv2.resize(img,(int(window_w*window_rate),window_h))
+        #print(int(window_w*window_rate),window_h)
+        
+        im = Image.fromarray(img)
+        imgtk = ImageTk.PhotoImage(image=im)
+        image_label.configure(image = imgtk)
+        image_label.image = imgtk
+    else:
+        w,h = img.size
+        img_rate_w = w / (window_w*window_rate)
+        img_rate_h = h / window_h
+        #print(img_rate_w,img_rate_h)
+        img = img.resize((int(window_w*window_rate),window_h))        
+        imgtk = ImageTk.PhotoImage(image=img)        
+        image_label.configure(image = imgtk)
+        image_label.image = imgtk
+        
+
+def garbage_img():
+    ref,file_name=load_img()
+    file_path = path+file_name[0]
+    shutil.move(file_path,garbage_path)    
+    basic_calculate()
+    
+def pass_img():
+    ref,file_name=load_img()
+    file_path = path+file_name[0]
+    #print(file_path)
+    shutil.move(file_path,pass_path)
+    
+    basic_calculate()
+
+def update_view_img(np_img,st_t,cen_t):
+ 
+    new_img = labeling_rectangle_print(np_img,st_t,cen_t)
+    #cv2.imwrite('temp/temp2.png', new_img)
+    
+    if labeling_number_print_val.get() == 1:
+        new_img2 = labeling_number_print(new_img,st_t,cen_t)     
+
+    view_img(new_img2)
+        
+        #print(img_rate_w,img_rate_h)
+    
+    
+
+def label_merge():
+    global select_label_set
+    global g_st_t
+    global g_cen_t
+    global img_origin
+    
+
+
+    img_origin = cv2.imread("temp/img_cut.png")
+    
+    st_t = g_st_t
+    cen_t = g_cen_t
+    
+    #print(len(st_t))
+    if(select_label_set.shape[0] >= 2):
+        #print("들어옴")
+        i = int(select_label_set[0])
+        j = int(select_label_set[1])
+        
+        #print(i,j)
+
+        if(st_t[i][0] > st_t[j][0]):
+            x_min=st_t[j][0]
+        else:
+            x_min=st_t[i][0]
+        if(st_t[i][1] > st_t[j][1]):
+            y_min=st_t[j][1]
+        else:
+            y_min=st_t[i][1]
+        if(st_t[i][0]+st_t[i][2] > st_t[j][0] + st_t[j][2]):
+            x_max=st_t[i][0]+st_t[i][2]
+        else:
+            x_max=st_t[j][0]+st_t[j][2]
+        if(st_t[i][1]+st_t[i][3] > st_t[j][1] + st_t[j][3]):
+            y_max=st_t[i][1]+st_t[i][3]
+        else:
+            y_max=st_t[j][1]+st_t[j][3]                  
+
+        update_center_x = (x_min + x_max) / 2
+        update_center_y = (y_min + y_max) / 2
+        update_w = (x_max-x_min)
+        update_h = (y_max-y_min)
+        update_area = update_w * update_h
+        update_center = [update_center_x, update_center_y]
+        update_stats = [x_min,y_min,update_w,update_h,update_area]
+
+                #delet (0)행 i,j열 삭제
+        st_t = np.delete(st_t, (i,j), axis=0)
+        cen_t = np.delete(cen_t, (i,j), axis=0)
+
+        st_t = np.vstack((st_t,update_stats))
+        cen_t = np.vstack((cen_t,update_center))
+    
+    #print(len(st_t),"연산후")
+    g_st_t = st_t
+    g_cen_t = cen_t
+    
+    select_label_set = [None]
+    select_label_set_text.config(text=str(select_label_set))
+    update_label_total(g_st_t)
+    
+    update_view_img(img_origin,g_st_t,g_cen_t)
+    
+
+    
+    
+
+def delet_label_number_pixel():
+    global select_label_set
+    global g_st_t
+    global g_cen_t
+    global img_origin
+    
+    img_origin = cv2.imread("temp/img_cut.png")
+    st_t = g_st_t
+    cen_t = g_cen_t
+
+    i = int(select_label_set[0])
+    #st_t [[ 242  121  188  154 4014] x좌표,y좌표,넓이,높이, 영역
+    delet_x = g_st_t[i][0]
+    delet_y = g_st_t[i][1]
+    delet_w = g_st_t[i][2]
+    delet_h = g_st_t[i][3]
+    
+    #img_origin[delet_y:delet_y+delet_h][delet_x:delet_x+delet_w] = 255
+    
+    for pix1 in range(delet_y,delet_y+delet_h):
+        for pix2 in range(delet_x,delet_x+delet_w):
+            img_origin[pix1,pix2] = 255
+            
+    #print(img_origin[delet_y:delet_y+delet_h][delet_x:delet_x+delet_w])
+    #print(img_origin)
+    
+                    #delet (0)행 i,j열 삭제
+    st_t = np.delete(st_t, i, axis=0)
+    cen_t = np.delete(cen_t, i, axis=0)
+    
+
+    
+
+    
+    
+    img = all_area_cut(img_origin,st_t,cen_t)
+    
+    
+    st_t,cen_t = img_preprocessing_labeling(img)
+    st_t,cen_t = min_area_inspection(st_t,cen_t) ## 최소 넓이 검사
+   
+    #cv2.imwrite('temp/processing.png', img_origin)
+    
+    # cv2.imwrite('temp/temp2.png', img)
+    
+    if len(st_t) > 0: #라벨링들 간의 최소거리 병합
+        inter = st_t.shape[0]
+        for i in range(0,inter): 
+            st_t,cen_t = distans_calculator(st_t,cen_t)
+    
+    
+    g_st_t = st_t
+    g_cen_t = cen_t
+    
+    select_label_set = [None]
+    select_label_set_text.config(text=str(select_label_set))
+        
+    update_label_total(g_st_t)
+    update_view_img(img,g_st_t,g_cen_t)
+    
+def key_input(value):    
+    
+    if value.char=='q':
+        cut_img_button()
+    elif value.char=='w':
+        pass_img()
+    elif value.char=='e':
+        garbage_img()
+    elif value.char=='a':
+        label_merge()
+    elif value.char=='d':
+        delet_label_number_pixel()
+    elif value.char=='g':
+        rectangle_merge()
+    elif value.char=='r':
+        basic_calculate()
+    elif value.char=='z':
+        label_merge()
+        rectangle_merge()
+    
+
+def rectangle_merge(): #겹치는 사각형 병합
+    
+    global g_st_t
+    
+    for i in range(0,g_st_t.shape[0]):
+        rectangle_merge_calculrate()
+    
+    
+    img_origin = cv2.imread("temp/img_cut.png")
+    update_label_total(g_st_t)
+    update_view_img(img_origin,g_st_t,g_cen_t)
+    
+    #와일문 돌려야함
+    
+def rectangle_merge_calculrate(): #겹치는 사각형 병합 계산
+    global g_st_t
+    global g_cen_t
+    
+    st_t = g_st_t
+    cen_t = g_cen_t
+    
+    flg_for=False
+    
+    for i in range(0,st_t.shape[0]):
+        for j in range(0,cen_t.shape[0]):
+            i_left = st_t[i][0]
+            i_right = st_t[i][0] + st_t[i][2]
+            i_top = st_t[i][1]
+            i_bottom = st_t[i][3] + st_t[i][1]
+            
+            j_left = st_t[j][0]
+            j_right = st_t[j][0] + st_t[j][2]
+            j_top = st_t[j][1]
+            j_bottom = st_t[j][3] + st_t[j][1]   
+            
+            
+            if(i!=j and i_left <= j_right and i_right >= j_left and i_top <= j_bottom and i_bottom > j_top):                
+                ## 겹치는 부분이 있다.
+                #if (RectA.X1 < RectB.X2 && RectA.X2 > RectB.X1 &&
+                #RectA.Y1 < RectB.Y2 && RectA.Y2 > RectB.Y1)                
+                if(st_t[i][0] > st_t[j][0]):
+                    x_min=st_t[j][0]
+                else:
+                    x_min=st_t[i][0]
+                if(st_t[i][1] > st_t[j][1]):
+                    y_min=st_t[j][1]
+                else:
+                    y_min=st_t[i][1]
+                if(st_t[i][0]+st_t[i][2] > st_t[j][0] + st_t[j][2]):
+                    x_max=st_t[i][0]+st_t[i][2]
+                else:
+                    x_max=st_t[j][0]+st_t[j][2]
+                if(st_t[i][1]+st_t[i][3] > st_t[j][1] + st_t[j][3]):
+                    y_max=st_t[i][1]+st_t[i][3]
+                else:
+                    y_max=st_t[j][1]+st_t[j][3]                  
+                
+                update_center_x = (x_min + x_max) / 2
+                update_center_y = (y_min + y_max) / 2
+                update_w = (x_max-x_min)
+                update_h = (y_max-y_min)
+                update_area = update_w * update_h
+                update_center = [update_center_x, update_center_y]
+                update_stats = [x_min,y_min,update_w,update_h,update_area]
+                
+                #delet (0)행 i,j열 삭제
+                st_t = np.delete(st_t, (i,j), axis=0)
+                cen_t = np.delete(cen_t, (i,j), axis=0)
+                
+                st_t = np.vstack((st_t,update_stats))
+                cen_t = np.vstack((cen_t,update_center))
+                
+                g_st_t = st_t
+                g_cen_t = cen_t
+                
+                flg_for=True
+                break
+                
+        if(flg_for==True):
+            break
+    
+    if(flg_for==True): #1을 반환하면 계속 돌려야함
+        return 1
+    else:
+        return 0
+
+def cut_img_button():
+    global g_st_t
+    global result_number
+    st_t = g_st_t
+    imgtemp = cv2.imread('temp/img_cut.png')
+    
+    for i in range(0,st_t.shape[0]):
+        result_number = result_number+1
+        
+        cut_temp = imgtemp[st_t[i][1]:st_t[i][1]+st_t[i][3],st_t[i][0]:st_t[i][0]+st_t[i][2] ] 
+        cv2.imwrite(f'result_img/{result_number}.png', cut_temp)
+    
+    ref,file_name=load_img()
+    file_path = path+file_name[0]
+    #print(file_path)
+    shutil.move(file_path,origin_path)
+    
+    basic_calculate()
+        
+#################################################################################################
+#### 확인결과 PIL 이미지도 삭제 해야함 그냥 템프 저장을 해야될듯...
+#################################################################################################
+
+create_dir()
+window_w = 1980
+window_h = 1024
+geometry = str(window_w)+'x'+ str(window_h)
+window_rate=0.8
+wiget_half_w = int((window_w - int(window_w*window_rate))/2)
+
+
+
+   
+window=tkinter.Tk()
+window.title("글자 나누기 데모버전 - 권재홍 - ")
+window.geometry(geometry) ## 크기
+window.resizable(False, False)
+
+window.bind('<Key>',key_input)
+
+left_frame=tkinter.Frame(window,background="red", relief="solid", bd=2)
+right_frame=tkinter.Frame(window, relief="solid", bd=2)
+
+left_frame.place(x=0, y=0, width=int(window_w*window_rate), height=window_h)
+right_frame.place(x=int(window_w*window_rate), y=0, width=window_w, height=window_h)
+
+
+
+
+image_label=tkinter.Label(left_frame)
+image_label.bind("<Button-1>", right_click) 
+
+
+
+image_label.place(x=0, y=0, width=int(window_w*window_rate), height=window_h)
+
+
+
+
+label_1=tkinter.Label(right_frame, text="최소 거리")
+label_1.place(x=wiget_half_w-20, y=10)
+var=tkinter.IntVar()
+scale=tkinter.Scale(right_frame, variable=var,command=min_distans_val, orient="horizontal", showvalue=False, tickinterval=50, to=500, length=300,repeatinterval=1000)
+scale.set(11) 
+scale.place(x=40, y=30)
+scale_label=tkinter.Label(right_frame, text="값 :" + str(var))
+scale_label.place(x=wiget_half_w-20, y=80)
+temp_label=tkinter.Label(right_frame, text="------------------------------------------------------------------------------------")
+temp_label.place(x=0, y=100)
+
+
+label_2=tkinter.Label(right_frame, text="최소 넓이")
+label_2.place(x=wiget_half_w-20, y=120)
+var2=tkinter.IntVar()
+scale2=tkinter.Scale(right_frame, variable=var2, command=min_area_val, orient="horizontal", showvalue=False, tickinterval=50, to=500, length=300,repeatinterval=1000)
+scale2.set(100) 
+scale2.place(x=40, y=150)
+scale_label1=tkinter.Label(right_frame, text="값 : 0")
+scale_label1.place(x=wiget_half_w-20, y=200)
+temp_label1=tkinter.Label(right_frame, text="------------------------------------------------------------------------------------")
+temp_label1.place(x=0, y=220)
+
+
+
+
+button1 = tkinter.Button(right_frame, overrelief="solid",text="이미지 자르기 (Q)", width=15,height=3, command=cut_img_button,repeatinterval=100)
+button1.place(x=0, y=250)
+
+button2 = tkinter.Button(right_frame, overrelief="solid",text="이미지 pass (W)", width=15,height=3, command=pass_img,repeatinterval=100)
+button2.place(x=0, y=310)
+
+button3 = tkinter.Button(right_frame, overrelief="solid",text="쓰레기 이미지 (E)", width=15,height=3, command=garbage_img,repeatinterval=100)
+button3.place(x=0, y=370)
+
+button4 = tkinter.Button(right_frame, overrelief="solid",text="선택 라벨링 병합 (A)", width=15,height=3, command=label_merge,repeatinterval=100)
+button4.place(x=125, y=250)
+
+button5 = tkinter.Button(right_frame, overrelief="solid",text="선택 라벨링 삭제 (D)", width=15,height=3, command=delet_label_number_pixel,repeatinterval=100)
+button5.place(x=125, y=310)
+
+button6 = tkinter.Button(right_frame, overrelief="solid",text="겹치는 부위 병합 (G)", width=15,height=3, command=rectangle_merge,repeatinterval=100)
+button6.place(x=250, y=250)
+
+button7 = tkinter.Button(right_frame, overrelief="solid",text="이미지 초기화 ( R )", width=15,height=3, command=basic_calculate,repeatinterval=100)
+button7.place(x=250, y=370)
+
+
+#체크박스 라벨링 번호
+labeling_number_print_val=tkinter.IntVar()
+rectangle_merge_val=tkinter.IntVar()
+checkbutton1=tkinter.Checkbutton(right_frame, text="라벨링 번호 보이기", variable=labeling_number_print_val)
+labeling_number_print_val.set(1)
+checkbutton2=tkinter.Checkbutton(right_frame, text="겹치는 부분 자동 합치기", variable=rectangle_merge_val)
+rectangle_merge_val.set(1)
+#checkbutton2=tkinter.Checkbutton(window, text="겹치는 부분 자동 합치기", variable=CheckVariety_2, command=flash)
+checkbutton1.place(x=20, y=450)
+checkbutton2.place(x=20, y=480)
+
+
+total_label=tkinter.Label(right_frame, text=" ")
+total_label.place(x=20, y=600)
+
+select_label_text=tkinter.Label(right_frame, text="선택한 라벨은 :")
+select_label_text.place(x=20, y=640)
+
+select_label_set_text=tkinter.Label(right_frame, text="선택한 라벨은 셋은 :")
+select_label_set_text.place(x=20, y=680)
+
+
+
+
+
+
+
+
+window.mainloop()
